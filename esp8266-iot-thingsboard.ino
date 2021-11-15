@@ -41,16 +41,16 @@ void loop()
     reconnect();
   }
   
+  // Cada 1 segundo realiza las mediciones y las envía a ThingsBoard
   smartDelay(1000);
-  getAndSendTemperatureAndHumidityData();
+  realizarMediciones();
 
   tb.loop();
 }
 
-void getAndSendTemperatureAndHumidityData()
+void realizarMediciones()
 {
   Serial.println("Obteniendo datos del sensor de temperatura.");
-
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
 
@@ -69,6 +69,7 @@ void getAndSendTemperatureAndHumidityData()
 
   smartDelay(1000);
 
+  // Obtiene datos del GPS
   if (gps.location.isValid())
   { 
     Serial.print("Latitud: ");
@@ -81,6 +82,7 @@ void getAndSendTemperatureAndHumidityData()
   }
   else
   {
+    // Si el GPS no está habilitado, envía una localización por defecto (Portal Temuco)
     Serial.println(F("INVALID"));
     tb.sendTelemetryFloat("latitude", -38.73336991904116);
     tb.sendTelemetryFloat("longitude", -72.61020036206409);
