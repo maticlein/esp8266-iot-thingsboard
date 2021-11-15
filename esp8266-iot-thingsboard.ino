@@ -1,13 +1,17 @@
 #include "DHT.h"
 #include <ESP8266WiFi.h>
 #include <ThingsBoard.h>
+#include <TinyGPS++.h>
+#include <SoftwareSerial.h>
 
 #define WIFI_AP "RED-WIFI"
-#define WIFI_PASSWORD "CONTRASEÑA-RED-WIFI"
+#define WIFI_PASSWORD "CONTRASEÑA-WIFI"
 #define TOKEN "TOKEN-DISPOSITIVO"
 
 #define DHTPIN 2
 #define DHTTYPE DHT11
+static const int RXPin = 4, TXPin = 5;
+static const uint32_t GPSBaud = 9600;
 
 char thingsboardServer[] = "demo.thingsboard.io";
 
@@ -15,6 +19,8 @@ WiFiClient wifiClient;
 
 DHT dht(DHTPIN, DHTTYPE);
 ThingsBoard tb(wifiClient);
+TinyGPSPlus gps;
+SoftwareSerial ss(RXPin, TXPin);
 
 int status = WL_IDLE_STATUS;
 unsigned long lastSend;
@@ -22,6 +28,7 @@ unsigned long lastSend;
 void setup()
 {
   Serial.begin(115200);
+  ss.begin(GPSBaud);
   dht.begin();
   delay(10);
   InitWiFi();
@@ -33,10 +40,10 @@ void loop()
   if ( !tb.connected() ) {
     reconnect();
   }
-  if ( millis() - lastSend > 1000 ) {
-    getAndSendTemperatureAndHumidityData();
-    lastSend = millis();
-  }
+  
+  smartDelay(1000);
+  getAndSendTemperatureAndHumidityData();
+
   tb.loop();
 }
 
@@ -60,16 +67,27 @@ void getAndSendTemperatureAndHumidityData()
   Serial.print(humidity);
   Serial.println(" % ");
 
-  Serial.print("Latitud: ");
-  Serial.print("-38.4398208486452");
-  Serial.print(" %\t");
-  Serial.print("Longitud: ");
-  Serial.println("-71.88990345808152");
+  smartDelay(1000);
 
+  if (gps.location.isValid())
+  { 
+    Serial.print("Latitud: ");
+    Serial.print(gps.location.lat(), 6);
+    Serial.print(" %\t");
+    Serial.print("Longitud: ");
+    Serial.println(gps.location.lng(), 6);
+    tb.sendTelemetryFloat("latitude", gps.location.lat());
+    tb.sendTelemetryFloat("longitude", gps.location.lng());
+  }
+  else
+  {
+    Serial.println(F("INVALID"));
+    tb.sendTelemetryFloat("latitude", -38.73336991904116);
+    tb.sendTelemetryFloat("longitude", -72.61020036206409);
+  }
+  
   tb.sendTelemetryFloat("temperature", temperature);
   tb.sendTelemetryFloat("humidity", humidity);
-  tb.sendTelemetryFloat("latitude", -38.4398208486452);
-  tb.sendTelemetryFloat("longitude", -71.88990345808152);
 }
 
 void InitWiFi()
@@ -104,4 +122,34 @@ void reconnect() {
       delay( 5000 );
     }
   }
+}
+
+static void smartDelay(unsigned long ms)
+{
+  unsigned long start = millis();
+  do 
+  {
+    while (ss.available())
+      gps.encode(ss.read());
+  } while (millis() - start < ms);
+}
+
+static void printFloat(float val, bool valid, int len, int prec)
+{
+  if (!valid)
+  {
+    while (len-- > 1)
+      Serial.print('*');
+    Serial.print(' ');
+  }
+  else
+  {
+    Serial.print(val, prec);
+    int vi = abs((int)val);
+    int flen = prec + (val < 0.0 ? 2 : 1); // . and -
+    flen += vi >= 1000 ? 4 : vi >= 100 ? 3 : vi >= 10 ? 2 : 1;
+    for (int i=flen; i<len; ++i)
+      Serial.print(' ');
+  }
+  smartDelay(0);
 }
